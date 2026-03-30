@@ -26,8 +26,15 @@ import numpy as np
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-from .spar_calculator import SparCalculator
-from .config import BUCKLING_LIMIT, MAX_PLY_PER_LAYER
+try:
+    from .spar_calculator import SparCalculator
+    from .config import BUCKLING_LIMIT, MAX_PLY_PER_LAYER
+except ImportError:
+    # 直接実行時（python layup_optimizer.py）のフォールバック
+    import sys, os as _os
+    sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..'))
+    from src.spar_design.spar_calculator import SparCalculator
+    from src.spar_design.config import BUCKLING_LIMIT, MAX_PLY_PER_LAYER
 
 # kgf → N 変換係数
 _G = 9.80665
