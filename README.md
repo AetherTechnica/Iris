@@ -64,6 +64,6 @@ Iris/
 ## 実装状況
 
 - [x] Phase 1: 基盤モジュール（config, mandrel, spar_calculator, layup_optimizer）
-- [ ] Phase 2: DPマンドレル最適配置
+- [x] Phase 2: DPマンドレル最適配置（mandrel_dp.py）
 - [ ] Phase 3: 最適化（たわみ・剛性・二次構造）
 - [ ] Phase 4: 収束ループ統合
