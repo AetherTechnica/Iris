@@ -43,6 +43,8 @@ _G = 9.80665
 _FIXED_PLY: dict[int, int] = {0: 1, 1: 2, 10: 1}
 # 可変層インデックス（Base + Cap1〜7）
 _VAR_INDICES: list[int] = [2, 3, 4, 5, 6, 7, 8, 9]
+# 各可変層の上限（idx2=Base は無制限→MAX_PLY_PER_LAYER，idx3〜9=Cap は最大4枚）
+_MAX_PLY: dict[int, int] = {2: MAX_PLY_PER_LAYER, **{i: 4 for i in range(3, 10)}}
 
 # EI要求値をキャッシュ丸め単位 [N·mm²]
 _CACHE_ROUND = 1e6
@@ -110,10 +112,10 @@ class LayupOptimizer:
         ply_min = self._initial_ply()
         ei_min_kgf, _, _ = self._calc.calculate_spec(ply_min, diameter_mm)
 
-        # 最大積層（全可変層が MAX_PLY_PER_LAYER 枚）
+        # 最大積層（各可変層の上限まで）
         ply_max = self._initial_ply()
         for i in _VAR_INDICES:
-            ply_max[i] = MAX_PLY_PER_LAYER
+            ply_max[i] = _MAX_PLY[i]
         ei_max_kgf, _, _ = self._calc.calculate_spec(ply_max, diameter_mm)
 
         return ei_min_kgf * _G, ei_max_kgf * _G
@@ -149,16 +151,16 @@ class LayupOptimizer:
         if current_ei_kgf >= EI_req_kgf:
             return self._make_result(ply, D, EI_req_Nmm2, feasible=True)
 
-        # 最大反復回数 = 可変層数 × MAX_PLY_PER_LAYER
-        max_steps = len(_VAR_INDICES) * MAX_PLY_PER_LAYER
+        # 最大反復回数（Base無制限 + Cap×4×7）
+        max_steps = MAX_PLY_PER_LAYER + 4 * 7
 
         for _ in range(max_steps):
             best_ratio = -1.0
             best_idx   = -1
 
             for i in _VAR_INDICES:
-                # 上限チェック
-                if ply[i] >= MAX_PLY_PER_LAYER:
+                # 上限チェック（idx2=無制限, idx3〜9=4枚）
+                if ply[i] >= _MAX_PLY[i]:
                     continue
 
                 # 1枚追加した場合の評価
