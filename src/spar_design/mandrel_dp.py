@@ -222,7 +222,8 @@ def mandrel_selection_dp(
                 len_min = OVERLAP_LENGTH + GRID_SIZE  # 300 mm
                 len_max = int(m_nxt.max_length)
 
-                for length in range(len_min, len_max + GRID_SIZE, GRID_SIZE):
+                # range の上限は len_max + 1（+GRID_SIZE だと1ステップ超過する）
+                for length in range(len_min, len_max + 1, GRID_SIZE):
                     y_advance = length - OVERLAP_LENGTH
                     y_end     = y_current + y_advance
 

@@ -112,7 +112,8 @@ class SparCalculator:
             self._RHO_24T,
             self._RHO_40T,
         )
-        weight_kg_m = float(np.sum(rho_vec * area_factor)) * 1000.0  # mm→m 換算
+        # 密度 [g/mm³] × 面積 [mm²] = [g/mm] = [kg/m]（数値的に等価，変換不要）
+        weight_kg_m = float(np.sum(rho_vec * area_factor))
 
         total_thickness = float(np.sum(thickness))
 
