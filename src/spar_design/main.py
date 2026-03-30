@@ -1,20 +1,17 @@
 """
 main.py — Iris スパー最適設計メインスクリプト
 ================================================
-コマンドライン引数で機体パラメータを指定し，
-最適スパー配置・重量を出力する。
+起動するとチャット形式で諸元を入力できる。
+Enter のみで各項目のデフォルト値を使用する。
 
 【実行例】
   python -m src.spar_design.main
-  python -m src.spar_design.main --span 12000 --delta-max 2500 --payload 75
-  python main.py --verbose
+  python main.py
 """
 
 from __future__ import annotations
 
-import argparse
 import sys
-import numpy as np
 
 try:
     from .convergence_loop import run_convergence_loop
@@ -34,76 +31,107 @@ except ImportError:
     )
 
 
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        description="Iris — 人力飛行機主翼スパー最適設計ツール",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+def _ask(prompt: str, default: float, fmt: str = ".4g") -> float:
+    """
+    1項目ぶんの入力を受け取る。
+    Enter のみ → default を使用。
+    不正な値が入力された場合は再入力を促す。
+    """
+    default_str = format(default, fmt)
+    while True:
+        try:
+            raw = input(f"  {prompt} [{default_str}]: ").strip()
+            if raw == "":
+                return default
+            return float(raw)
+        except ValueError:
+            print("    ※ 数値を入力してください。")
+
+
+def _ask_yn(prompt: str, default: bool = True) -> bool:
+    """y/n の入力を受け取る。"""
+    suffix = "[Y/n]" if default else "[y/N]"
+    raw = input(f"  {prompt} {suffix}: ").strip().lower()
+    if raw == "":
+        return default
+    return raw.startswith("y")
+
+
+def _input_params() -> dict:
+    """チャット形式で諸元を入力し，パラメータ辞書を返す。"""
+    print()
+    print("  Enter のみでデフォルト値を使用します。")
+    print()
+
+    # --- 主要諸元 ---
+    print("  【機体諸元】")
+    span         = _ask("片翼スパン                  [mm]", DEFAULT_SPAN,        ".0f")
+    chord        = _ask("翼根コード長                [mm]", DEFAULT_ROOT_CHORD,  ".0f")
+    payload      = _ask("ペイロード（パイロット+機構）[kg]", DEFAULT_PAYLOAD,    ".1f")
+
+    print()
+    print("  【構造諸元】")
+    delta_max    = _ask("翼端たわみ許容値            [mm]", DEFAULT_DELTA_MAX,   ".0f")
+    rho_skin     = _ask("外皮面密度                  [kg/m²]", DEFAULT_RHO_SKIN, ".4f")
+
+    print()
+    print("  【空力・環境諸元】")
+    v_ms         = _ask("飛行速度                    [m/s]", 7.5,               ".2f")
+    rho_air      = _ask("空気密度                    [kg/m³]", 1.154,           ".4f")
+    beta         = _ask("循環分布係数 β（TR-797）   [-]",  DEFAULT_BETA,        ".2f")
+
+    print()
+    print("  【計算設定】（通常はそのままでOK）")
+    w_spar_init  = _ask("桁重量初期推定値（片翼）    [kg]", DEFAULT_W_INITIAL_SPAR, ".1f")
+    relax        = _ask("Picard 緩和係数 α          [-]",  RELAX_ALPHA,         ".2f")
+    max_iter     = int(_ask("最大反復回数               [-]",  MAX_ITER,        ".0f"))
+    conv_tol     = _ask("収束閾値                    [kg]", CONV_TOL,           ".4f")
+
+    return dict(
+        span_mm        = span,
+        root_chord_mm  = chord,
+        delta_max_mm   = delta_max,
+        rho_skin_kg_m2 = rho_skin,
+        v_ms           = v_ms,
+        rho_air        = rho_air,
+        beta           = beta,
+        payload_kg     = payload,
+        w_spar_init_kg = w_spar_init,
+        relax          = relax,
+        max_iter       = max_iter,
+        conv_tol       = conv_tol,
     )
-    p.add_argument("--span",         type=float, default=DEFAULT_SPAN,
-                   help="片翼スパン [mm]")
-    p.add_argument("--chord",        type=float, default=DEFAULT_ROOT_CHORD,
-                   help="翼根コード長 [mm]")
-    p.add_argument("--delta-max",    type=float, default=DEFAULT_DELTA_MAX,
-                   help="翼端たわみ許容値 [mm]")
-    p.add_argument("--rho-skin",     type=float, default=DEFAULT_RHO_SKIN,
-                   help="外皮面密度 [kg/m²]")
-    p.add_argument("--v",            type=float, default=7.5,
-                   help="飛行速度 [m/s]")
-    p.add_argument("--rho-air",      type=float, default=1.154,
-                   help="空気密度 [kg/m³]")
-    p.add_argument("--beta",         type=float, default=DEFAULT_BETA,
-                   help="TR-797 循環分布係数")
-    p.add_argument("--payload",      type=float, default=DEFAULT_PAYLOAD,
-                   help="ペイロード重量（パイロット＋機構）[kg]")
-    p.add_argument("--w-spar-init",  type=float, default=DEFAULT_W_INITIAL_SPAR,
-                   help="桁重量初期推定値（片翼）[kg]")
-    p.add_argument("--relax",        type=float, default=RELAX_ALPHA,
-                   help="Picard 緩和係数 α")
-    p.add_argument("--max-iter",     type=int,   default=MAX_ITER,
-                   help="最大反復回数")
-    p.add_argument("--conv-tol",     type=float, default=CONV_TOL,
-                   help="収束閾値 [kg]")
-    p.add_argument("--verbose",      action="store_true",
-                   help="各反復の詳細を表示")
-    return p
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args   = parser.parse_args(argv)
-
+def main() -> int:
     print("=" * 70)
     print("  Iris — HPA 主翼スパー最適設計")
     print("=" * 70)
-    print(f"  スパン        : {args.span:.0f} mm")
-    print(f"  翼根コード長  : {args.chord:.0f} mm")
-    print(f"  たわみ許容    : {args.delta_max:.0f} mm")
-    print(f"  外皮面密度    : {args.rho_skin:.4f} kg/m²")
-    print(f"  飛行速度      : {args.v:.1f} m/s")
-    print(f"  空気密度      : {args.rho_air:.4f} kg/m³")
-    print(f"  β（TR-797）  : {args.beta:.2f}")
-    print(f"  ペイロード    : {args.payload:.1f} kg")
+
+    params = _input_params()
+
+    # 確認表示
+    print()
+    print("  【入力諸元の確認】")
+    print(f"    片翼スパン        : {params['span_mm']:.0f} mm")
+    print(f"    翼根コード長      : {params['root_chord_mm']:.0f} mm")
+    print(f"    ペイロード        : {params['payload_kg']:.1f} kg")
+    print(f"    たわみ許容        : {params['delta_max_mm']:.0f} mm")
+    print(f"    外皮面密度        : {params['rho_skin_kg_m2']:.4f} kg/m²")
+    print(f"    飛行速度          : {params['v_ms']:.2f} m/s")
+    print(f"    空気密度          : {params['rho_air']:.4f} kg/m³")
+    print(f"    β                : {params['beta']:.2f}")
     print()
 
-    result = run_convergence_loop(
-        span_mm        = args.span,
-        root_chord_mm  = args.chord,
-        delta_max_mm   = args.delta_max,
-        rho_skin_kg_m2 = args.rho_skin,
-        v_ms           = args.v,
-        rho_air        = args.rho_air,
-        beta           = args.beta,
-        payload_kg     = args.payload,
-        w_spar_init_kg = args.w_spar_init,
-        relax          = args.relax,
-        max_iter       = args.max_iter,
-        conv_tol       = args.conv_tol,
-        verbose        = True,
-    )
+    ok = _ask_yn("この諸元で計算を開始しますか？", default=True)
+    if not ok:
+        print("  キャンセルしました。")
+        return 0
+
+    result = run_convergence_loop(**params, verbose=True)
 
     result.print_summary()
 
-    # 最終 EI 分布サマリー
     if result.EI_opt is not None:
         print(f"\n  EI 分布（翼根→翼端）")
         print(f"    翼根: {result.EI_opt[0]:.3e} N·mm²")
